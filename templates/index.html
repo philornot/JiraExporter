@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Exporter</title>
+    <link rel="stylesheet" href="../static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Jira Exporter</h1>
+
+        <div id="auth-section">
+            <h2>Authentication</h2>
+            <p>Credentials are loaded from environment variables.</p>
+            <button id="auth-btn" onclick="authenticate()">Connect to Jira</button>
+            <div id="auth-status"></div>
+        </div>
+
+        <div id="projects-section" style="display: none;">
+            <h2>Select Project</h2>
+            <div id="projects-loading">Loading projects...</div>
+            <select id="project-select" style="display: none;">
+                <option value="">-- Select a project --</option>
+            </select>
+            <button id="export-btn" onclick="exportProject()" style="display: none;">Export to Markdown</button>
+            <div id="export-status"></div>
+        </div>
+
+        <div id="progress-section" style="display: none;">
+            <h2>Export Progress</h2>
+            <div class="progress-bar">
+                <div id="progress-fill"></div>
+            </div>
+            <p id="progress-text">Preparing export...</p>
+        </div>
+
+        <div id="debug-section" style="margin-top: 30px; padding: 15px; background: #f9f9f9; border-radius: 4px; display: none;">
+            <h3 style="margin-top: 0; font-size: 16px; color: #666;">Configuration Debug</h3>
+            <pre id="debug-info" style="font-size: 12px; color: #666; margin: 0;"></pre>
+        </div>
+    </div>
+
+    <script src="../static/script.js"></script>
+    <script>
+        // Load and display config on page load for debugging
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(data => {
+                const debugSection = document.getElementById('debug-section');
+                const debugInfo = document.getElementById('debug-info');
+
+                debugInfo.textContent =
+                    `Email: ${data.email_set ? '✓ ' + (data.email || 'set') : '✗ missing'}\n` +
+                    `Token: ${data.token_set ? '✓ set (' + data.token_length + ' chars)' : '✗ missing'}\n` +
+                    `Domain: ${data.domain_set ? '✓ ' + (data.domain || 'set') : '✗ missing'}`;
+
+                // Show debug section if any config is missing
+                if (!data.email_set || !data.token_set || !data.domain_set) {
+                    debugSection.style.display = 'block';
+                }
+            })
+            .catch(err => console.error('Failed to load config:', err));
+    </script>
+</body>
+</html>
