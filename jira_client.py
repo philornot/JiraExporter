@@ -159,30 +159,30 @@ class JiraClient:
     def get_issue_count(self, project_key: str) -> int:
         """Get the total number of issues in a project without fetching them.
 
-        Uses a JQL query with ``maxResults=1`` and ``returnTotalCount=true``.
-        The /search/jql endpoint (introduced after the deprecation of /search)
-        does not return ``total`` unless explicitly requested via that flag.
+        Uses the dedicated ``/search/approximate-count`` endpoint introduced
+        alongside the new ``/search/jql`` API. The old ``/search`` endpoint
+        accepted ``maxResults=0`` to get a total cheaply, but ``/search/jql``
+        removed the ``total`` field entirely — this endpoint is the official
+        replacement for that use-case.
+
+        Note: The count is approximate (may lag by a few seconds) but is
+        accurate enough for the large-project threshold check.
 
         Args:
             project_key (str): The project key (e.g., 'PROJ').
 
         Returns:
-            int: Total number of issues in the project.
+            int: Approximate total number of issues in the project.
         """
-        url = f"{self.base_url}/search/jql"
-        payload = {
-            "jql": f"project={project_key}",
-            "maxResults": 1,
-            "fields": ["id"],
-            "returnTotalCount": True,
-        }
+        url = f"{self.base_url}/search/approximate-count"
+        payload = {"jql": f"project={project_key}"}
 
-        self.logger.debug(f"Fetching issue count for {project_key}")
+        self.logger.debug(f"Fetching approximate issue count for {project_key}")
         response = requests.post(url, auth=self.auth, headers=self.headers, json=payload)
         response.raise_for_status()
 
-        total = response.json().get('total', 0)
-        self.logger.info(f"Project {project_key} has {total} issues")
+        total = response.json().get('count', 0)
+        self.logger.info(f"Project {project_key} has ~{total} issues")
         return total
 
     def get_all_issues(self, project_key: str) -> List[Dict[str, Any]]:
