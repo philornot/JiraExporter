@@ -147,7 +147,8 @@ class JiraClient:
 
         if response.status_code == 404:
             self.logger.error(f"Project {project_key} not found")
-            raise Exception(f"Project '{project_key}' not found. It may have been deleted or you don't have access to it.")
+            raise Exception(
+                f"Project '{project_key}' not found. It may have been deleted or you don't have access to it.")
 
         response.raise_for_status()
 
@@ -156,15 +157,44 @@ class JiraClient:
         # Check if project is archived
         if project_data.get('archived', False):
             self.logger.warning(f"Project {project_key} is archived")
-            raise Exception(f"Project '{project_key}' is archived and cannot be exported. Please choose an active project.")
+            raise Exception(
+                f"Project '{project_key}' is archived and cannot be exported. Please choose an active project.")
 
         return project_data['name']
+
+    def get_issue_count(self, project_key: str) -> int:
+        """
+        Get the total number of issues in a project without fetching them all.
+
+        Uses a JQL query with maxResults=0 to retrieve only the total count,
+        which is fast even for very large projects.
+
+        Args:
+            project_key (str): The project key (e.g., 'PROJ').
+
+        Returns:
+            int: Total number of issues in the project.
+        """
+        url = f"{self.base_url}/search/jql"
+        payload = {
+            "jql": f"project={project_key} ORDER BY key ASC",
+            "maxResults": 0,
+            "fields": []
+        }
+
+        self.logger.debug(f"Fetching issue count for {project_key}")
+        response = requests.post(url, auth=self.auth, headers=self.headers, json=payload)
+        response.raise_for_status()
+
+        total = response.json().get('total', 0)
+        self.logger.info(f"Project {project_key} has {total} issues")
+        return total
 
     def get_all_issues(self, project_key: str) -> List[Dict[str, Any]]:
         """
         Retrieve all issues for a given project with pagination.
 
-        This method uses the new /rest/api/3/search/jql endpoint with
+        This method uses the /rest/api/3/search/jql endpoint with
         nextPageToken-based pagination. Issues are ordered by key for
         deterministic output suitable for version control.
 
@@ -175,21 +205,70 @@ class JiraClient:
             List[Dict[str, Any]]: List of all issues with processed fields,
                 ordered by issue key.
         """
+        return self._fetch_issues_by_jql(
+            jql=f"project={project_key} ORDER BY key ASC"
+        )
+
+    def get_issues_in_key_range(
+            self,
+            project_key: str,
+            key_from: int,
+            key_to: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve issues within a specific key-number range for a project.
+
+        Useful for exporting a subset of a large project without fetching
+        every issue. The range is inclusive on both ends.
+
+        Args:
+            project_key (str): The project key (e.g., 'PROJ').
+            key_from (int): First issue number to include (e.g., 1 for PROJ-1).
+            key_to (int): Last issue number to include (e.g., 200 for PROJ-200).
+
+        Returns:
+            List[Dict[str, Any]]: List of processed issues within the range,
+                ordered by key.
+        """
+        jql = (
+            f"project={project_key} "
+            f"AND issuekey >= {project_key}-{key_from} "
+            f"AND issuekey <= {project_key}-{key_to} "
+            f"ORDER BY key ASC"
+        )
+        self.logger.info(
+            f"Fetching issues for {project_key} in range "
+            f"{project_key}-{key_from} to {project_key}-{key_to}"
+        )
+        return self._fetch_issues_by_jql(jql=jql)
+
+    def _fetch_issues_by_jql(self, jql: str) -> List[Dict[str, Any]]:
+        """
+        Fetch all issues matching a JQL query, handling pagination automatically.
+
+        Uses nextPageToken-based pagination introduced with the /search/jql
+        endpoint. The loop continues until there is no nextPageToken in the
+        response — this is the authoritative end-of-results signal, because
+        the isLast field is not always returned by the API.
+
+        Args:
+            jql (str): A valid JQL query string.
+
+        Returns:
+            List[Dict[str, Any]]: All matching issues as processed dicts.
+        """
         all_issues = []
         next_page_token = None
         page_count = 0
         max_results = 100
-
-        self.logger.info(f"Starting issue retrieval for project {project_key}")
 
         url = f"{self.base_url}/search/jql"
 
         while True:
             page_count += 1
 
-            # Build payload for POST request
             payload = {
-                "jql": f"project={project_key} ORDER BY key ASC",
+                "jql": jql,
                 "maxResults": max_results,
                 "fields": ["summary", "description", "status", "parent"]
             }
@@ -197,20 +276,15 @@ class JiraClient:
             if next_page_token:
                 payload["nextPageToken"] = next_page_token
 
-            self.logger.debug(f"Fetching page {page_count}, maxResults={max_results}")
+            self.logger.debug(f"Fetching page {page_count} (nextPageToken={next_page_token!r})")
 
-            response = requests.post(
-                url,
-                auth=self.auth,
-                headers=self.headers,
-                json=payload
-            )
+            response = requests.post(url, auth=self.auth, headers=self.headers, json=payload)
 
-            # Handle errors
             if response.status_code == 404:
-                self.logger.error(f"Search endpoint not found - API might have changed")
+                self.logger.error("Search endpoint not found - API might have changed")
                 raise Exception(
-                    f"Search API endpoint not found. Please check that you're using the latest version of the application."
+                    "Search API endpoint not found. "
+                    "Please check that you're using the latest version of the application."
                 )
 
             response.raise_for_status()
@@ -220,34 +294,38 @@ class JiraClient:
             total = data.get('total', 0)
 
             if not issues:
-                self.logger.debug("No more issues to fetch")
+                self.logger.debug("No issues returned - reached end of results")
                 break
 
-            self.logger.debug(f"Retrieved {len(issues)} issues (total so far: {len(all_issues) + len(issues)}/{total})")
+            self.logger.debug(
+                f"Page {page_count}: got {len(issues)} issues "
+                f"(total so far: {len(all_issues) + len(issues)}/{total})"
+            )
 
-            # Process each issue
             for issue in issues:
-                processed_issue = self._process_issue(issue)
-                all_issues.append(processed_issue)
+                all_issues.append(self._process_issue(issue))
 
-            # Check for next page
+            # Primary stop condition: absence of nextPageToken is the authoritative
+            # signal that there are no more pages. isLast is NOT used as the primary
+            # check because the /search/jql endpoint does not always return it,
+            # and defaulting it to True caused the original pagination bug where
+            # only the first 100 issues were ever returned.
             next_page_token = data.get('nextPageToken')
-            is_last = data.get('isLast', True)
-
-            # Safety check: if we've fetched more issues than total, stop
-            if len(all_issues) >= total:
-                self.logger.debug(f"Fetched all {total} issues")
+            if not next_page_token:
+                self.logger.debug("No nextPageToken in response - reached last page")
                 break
 
-            # Safety check: if isLast is true or no next token, stop
-            if is_last or not next_page_token:
-                self.logger.debug("Reached last page")
+            # Secondary stop: explicit isLast=True from the API
+            if data.get('isLast', False):
+                self.logger.debug("isLast=True received from API")
                 break
 
-            # Safety check: prevent infinite loops (max 1000 pages = 100k issues)
+            # Safety stop: prevent infinite loops (max 1 000 pages = 100 000 issues)
             if page_count >= 1000:
-                self.logger.warning(f"Reached maximum page count ({page_count}). Stopping to prevent infinite loop.")
-                self.logger.warning(f"Fetched {len(all_issues)} out of {total} total issues")
+                self.logger.warning(
+                    f"Reached maximum page limit ({page_count} pages). "
+                    f"Stopping with {len(all_issues)}/{total} issues fetched."
+                )
                 break
 
         self.logger.info(f"Total issues retrieved: {len(all_issues)}")
@@ -304,10 +382,10 @@ class JiraClient:
         return self._process_adf_node(adf_content).strip()
 
     def _process_adf_node(
-        self,
-        node: Dict[str, Any],
-        level: int = 0,
-        list_index: Optional[int] = None
+            self,
+            node: Dict[str, Any],
+            level: int = 0,
+            list_index: Optional[int] = None
     ) -> str:
         """
         Process a single ADF node recursively.
@@ -380,7 +458,6 @@ class JiraClient:
         elif node_type == 'listItem':
             indent = '  ' * level
 
-            # Extract text from all child nodes
             item_parts = []
             for child in content:
                 child_text = self._process_adf_node(child, level + 1)
@@ -390,10 +467,8 @@ class JiraClient:
             item_text = ' '.join(item_parts)
 
             if list_index is not None:
-                # Ordered list
                 result.append(f"{indent}{list_index}. {item_text}\n")
             else:
-                # Bullet list
                 result.append(f"{indent}- {item_text}\n")
 
         elif node_type == 'codeBlock':
@@ -407,7 +482,6 @@ class JiraClient:
             quote_text = ''.join([
                 self._process_adf_node(child, level) for child in content
             ])
-            # Add > prefix to each line
             quoted_lines = ['> ' + line for line in quote_text.split('\n') if line.strip()]
             result.append('\n'.join(quoted_lines) + '\n\n')
 
