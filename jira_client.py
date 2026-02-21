@@ -159,9 +159,10 @@ class JiraClient:
     def get_issue_count(self, project_key: str) -> int:
         """Get the total number of issues in a project without fetching them.
 
-        Uses a JQL query with ``maxResults=0`` to retrieve only the total
-        count. Fast even for very large projects (single API call, no issue
-        data transferred).
+        Uses a JQL query with ``maxResults=1`` and an empty ``fields`` list to
+        retrieve only the ``total`` field. The /search/jql endpoint does not
+        accept maxResults=0 (returns HTTP 400), so we request one item and
+        discard it.
 
         Args:
             project_key (str): The project key (e.g., 'PROJ').
@@ -172,7 +173,8 @@ class JiraClient:
         url = f"{self.base_url}/search/jql"
         payload = {
             "jql": f"project={project_key}",
-            "maxResults": 0,
+            "maxResults": 1,
+            "fields": [],
         }
 
         self.logger.debug(f"Fetching issue count for {project_key}")
