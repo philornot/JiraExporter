@@ -54,10 +54,16 @@ button:disabled {
 select {
     width: 100%;
     padding: 10px;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 16px;
+}
+
+.help-text {
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 12px;
 }
 
 .progress-bar {
@@ -71,9 +77,9 @@ select {
 
 #progress-fill {
     height: 100%;
-    width: 0%;
+    width: 0;
     background-color: #0052cc;
-    transition: width 0.3s ease;
+    transition: width 0.4s ease;
 }
 
 #progress-text {
@@ -112,4 +118,116 @@ select {
 p {
     color: #666;
     margin-bottom: 15px;
+}
+
+/* ─── Range slider (JE-15) ─────────────────────────────────────────────────── */
+
+#range-section {
+    margin: 16px 0;
+    padding: 16px;
+    background: #f4f5f7;
+    border-radius: 6px;
+    border: 1px solid #dfe1e6;
+}
+
+.range-slider-wrapper {
+    width: 100%;
+}
+
+/* Labels above the handles */
+.range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0052cc;
+    margin-bottom: 6px;
+}
+
+/* Container that holds the track fill and both input[range] overlays */
+.range-track-container {
+    position: relative;
+    height: 36px;
+    display: flex;
+    align-items: center;
+}
+
+/* Coloured fill between the two handles */
+.range-track-fill {
+    position: absolute;
+    height: 6px;
+    background: #0052cc;
+    border-radius: 3px;
+    pointer-events: none;
+    /* left and width are set via JS */
+}
+
+/* Both sliders sit on top of each other; we rely on z-index to pick
+   the active one. The track itself is made transparent so only the
+   coloured fill and the thumb are visible. */
+.range-input {
+    position: absolute;
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    pointer-events: none;
+    outline: none;
+}
+
+/* Give the "From" slider a slightly lower z-index by default so the
+   "To" thumb is reachable when both are at the far ends. */
+.range-input-from { z-index: 3; }
+.range-input-to   { z-index: 4; }
+
+/* Shared thumb style */
+.range-input::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0052cc;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    cursor: pointer;
+    pointer-events: all;
+    transition: background 0.15s;
+}
+
+.range-input::-webkit-slider-thumb:hover,
+.range-input::-webkit-slider-thumb:active {
+    background: #0747a6;
+}
+
+.range-input::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0052cc;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    cursor: pointer;
+    pointer-events: all;
+}
+
+/* Track background (the grey rail) */
+.range-input::-webkit-slider-runnable-track {
+    height: 6px;
+    background: #dfe1e6;
+    border-radius: 3px;
+}
+
+.range-input::-moz-range-track {
+    height: 6px;
+    background: #dfe1e6;
+    border-radius: 3px;
+}
+
+.range-summary {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #555;
+    text-align: center;
 }
